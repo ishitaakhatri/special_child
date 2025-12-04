@@ -1,0 +1,14 @@
+# Core dependencies
+streamlit>=1.28.0
+tensorflow>=2.13.0
+numpy>=1.24.0
+pandas>=2.0.0
+opencv-python>=4.8.0
+Pillow>=10.0.0
+plotly>=5.17.0
+
+# AI Assistant (Gemini) - Optional but recommended
+google-generativeai>=0.3.0
+
+# Alternative: OpenAI (if you prefer)
+# openai>=1.3.0
