@@ -23,7 +23,7 @@ from io import BytesIO
 
 # Try to import Gemini
 try:
-    import google.generativeai as genai
+    from google import genai
     GEMINI_AVAILABLE = True
 except ImportError:
     GEMINI_AVAILABLE = False
@@ -145,10 +145,7 @@ def analyze_with_gemini_vision(image, student_data, api_key):
         return None
     
     try:
-        genai.configure(api_key=api_key)
-        
-        # Use Gemini 1.5 Flash for vision (fast and capable)
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        client = genai.Client(api_key=api_key)
         
         # Convert image to format Gemini can use
         if isinstance(image, np.ndarray):
@@ -193,7 +190,10 @@ IMPORTANT:
 """
         
         # Send image to Gemini
-        response = model.generate_content([prompt, image])
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[prompt, image]
+        )
         
         # Parse the response
         response_text = response.text.strip()
@@ -223,8 +223,7 @@ def get_teaching_recommendations(student_data, analysis_result, api_key):
         return None
     
     try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        client = genai.Client(api_key=api_key)
         
         prompt = f"""You are a special education expert. Based on this handwriting analysis, provide teaching recommendations.
 
@@ -248,7 +247,10 @@ Focus on:
 Be concise and practical.
 """
         
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt
+        )
         return response.text
         
     except Exception as e:
@@ -779,8 +781,7 @@ def chat_section(student):
             
             # Get AI response
             try:
-                genai.configure(api_key=st.session_state.api_key)
-                model = genai.GenerativeModel('gemini-2.5-flash')
+                client = genai.Client(api_key=st.session_state.api_key)
                 
                 progress = st.session_state.student_progress.get(student['name'], [])
                 
@@ -794,7 +795,10 @@ TEACHER'S QUESTION: {user_input}
 
 Provide helpful, practical advice. Be concise."""
 
-                response = model.generate_content(prompt)
+                response = client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=prompt
+                )
                 st.session_state.chat_history.append({'role': 'assistant', 'content': response.text})
                 st.rerun()
                 

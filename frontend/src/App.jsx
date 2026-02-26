@@ -10,7 +10,7 @@ function App() {
   const [teacherName, setTeacherName] = useState('')
   const [parentName, setParentName] = useState('')
   const [selectedStudent, setSelectedStudent] = useState(null)
-  const [apiKey, setApiKey] = useState('')
+  const [apiKey, setApiKey] = useState(import.meta.env.VITE_GEMINI_API_KEY || '')
   const [studentProgress, setStudentProgress] = useState({})
 
   const handleLogin = (name) => {

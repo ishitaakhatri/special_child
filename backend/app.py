@@ -8,11 +8,11 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import numpy as np
 import json
-import os
-import base64
-from io import BytesIO
 from PIL import Image
 from datetime import datetime
+import base64
+from io import BytesIO
+import os
 
 # Try to import TensorFlow
 try:
@@ -24,10 +24,21 @@ except ImportError:
 
 # Try to import Gemini
 try:
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types
     GEMINI_AVAILABLE = True
-except ImportError:
+except Exception:
     GEMINI_AVAILABLE = False
+
+# Try to import dotenv
+try:
+    from dotenv import load_dotenv
+    load_dotenv() # Load .env if present
+    # Also look in frontend or root
+    load_dotenv("../frontend/.env")
+    load_dotenv("../.env")
+except ImportError:
+    pass
 
 # Try to import OpenCV
 try:
@@ -38,6 +49,19 @@ except ImportError:
 
 app = Flask(__name__)
 CORS(app)
+
+def get_api_key(provided_key):
+    """
+    Resolve the Gemini API key with the following precedence:
+    1. Provided via the request (UI)
+    2. Environment variable (GEMINI_API_KEY)
+    """
+    if provided_key:
+        return provided_key
+    ext_key = os.environ.get('GEMINI_API_KEY', '') or os.environ.get('VITE_GEMINI_API_KEY', '')
+    if ext_key:
+        print("DEBUG: Using API key from environment variable")
+    return ext_key
 
 # ============================================
 # CLASS LABELS & DATA
@@ -116,12 +140,20 @@ def decode_image(image_data):
 
 
 def analyze_with_gemini_vision(image, student_data, api_key):
-    if not GEMINI_AVAILABLE or not api_key:
+    if not GEMINI_AVAILABLE:
+        print("DEBUG: GEMINI_AVAILABLE is False")
         return None
-    try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-2.5-flash')
+    
+    # Resolve API Key
+    resolved_key = get_api_key(api_key)
+    if not resolved_key:
+        print("DEBUG: No API key found (provided or environment)")
+        return None
 
+    try:
+        print(f"DEBUG: Initializing Gemini Client with key prefix: {resolved_key[:5]}...")
+        client = genai.Client(api_key=resolved_key)
+        
         prompt = f"""You are an expert in analyzing handwriting from children with special needs.
 
 TASK: Analyze this handwriting sample from a student.
@@ -158,19 +190,41 @@ IMPORTANT:
 4. Be encouraging but honest
 5. Return ONLY valid JSON, no other text
 """
-        response = model.generate_content([prompt, image])
+        # Prepare image for Gemini
+        img_byte_arr = BytesIO()
+        image.save(img_byte_arr, format='PNG')
+        img_bytes = img_byte_arr.getvalue()
+        
+        print(f"DEBUG: Calling Gemini model: gemini-2.5-flash")
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[
+                prompt,
+                types.Part.from_bytes(data=img_bytes, mime_type='image/png')
+            ]
+        )
+        if not response or not hasattr(response, 'text') or not response.text:
+            print("DEBUG: Gemini returned empty or invalid response")
+            return {"error": "Empty or invalid response from Gemini"}
+
         response_text = response.text.strip()
+        print(f"DEBUG: Gemini Success. Response length: {len(response_text)}")
 
         if response_text.startswith('```'):
-            response_text = response_text.split('```')[1]
-            if response_text.startswith('json'):
-                response_text = response_text[4:]
+            parts = response_text.split('```')
+            if len(parts) > 1:
+                response_text = parts[1]
+                if response_text.startswith('json'):
+                    response_text = response_text[4:]
+        response_text = response_text.strip()
         response_text = response_text.strip()
 
         return json.loads(response_text)
     except json.JSONDecodeError:
+        print(f"DEBUG: JSONDecodeError. Raw response: {response_text[:100]}...")
         return {"error": "JSON parsing failed", "raw_response": response_text}
     except Exception as e:
+        print(f"DEBUG: Gemini Exception: {str(e)}")
         return {"error": str(e)}
 
 
@@ -227,10 +281,18 @@ def hybrid_analysis(image, student_data, api_key):
             results["ml_result"] = ml_result
 
     # LLM analysis
+    llm_error = None
     if api_key and GEMINI_AVAILABLE:
         llm_result = analyze_with_gemini_vision(image, student_data, api_key)
         if llm_result and "error" not in llm_result:
             results["llm_result"] = llm_result
+        elif llm_result and "error" in llm_result:
+            llm_error = llm_result["error"]
+            print(f"DEBUG: LLM Analysis failed: {llm_error}")
+    elif not api_key:
+        print("DEBUG: No API key provided for hybrid analysis")
+    elif not GEMINI_AVAILABLE:
+        print("DEBUG: Gemini SDK not available")
 
     # Combine
     if results["llm_result"]:
@@ -261,7 +323,11 @@ def hybrid_analysis(image, student_data, api_key):
         results["confidence"] = float(np.random.uniform(60, 90))
         for letter in set(results["final_prediction"]):
             results["letter_scores"][letter] = float(np.random.uniform(50, 95))
-        results["feedback"] = "Demo mode - no model or API key configured."
+        
+        if llm_error:
+            results["feedback"] = f"Gemini Error: {llm_error}. (Using fallback prediction)"
+        else:
+            results["feedback"] = "Demo mode - no model or API key configured."
 
     return results
 
@@ -278,7 +344,9 @@ def get_students():
 @app.route('/api/analyze', methods=['POST'])
 def analyze():
     try:
-        api_key = request.form.get('api_key', '')
+        provided_key = request.form.get('api_key', '')
+        api_key = get_api_key(provided_key)
+        print(f"DEBUG: /api/analyze called. Mode: {request.form.get('mode')}, API Key resolved: {bool(api_key)}")
         student_json = request.form.get('student', '{}')
         student = json.loads(student_json)
         mode = request.form.get('mode', 'hybrid')
@@ -340,15 +408,16 @@ def analyze():
 def recommendations():
     try:
         data = request.json
-        api_key = data.get('api_key', '')
+        provided_key = data.get('api_key', '')
+        api_key = get_api_key(provided_key)
         student = data.get('student', {})
         analysis_result = data.get('analysis_result', {})
 
         if not GEMINI_AVAILABLE or not api_key:
             return jsonify({"error": "Gemini API not available or no API key"}), 400
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        print(f"DEBUG: /api/recommendations called. API Key length: {len(api_key)}")
+        client = genai.Client(api_key=api_key)
 
         prompt = f"""You are a special education expert. Based on this handwriting analysis, provide teaching recommendations.
 
@@ -371,7 +440,11 @@ Focus on:
 
 Be concise and practical.
 """
-        response = model.generate_content(prompt)
+        print(f"DEBUG: Calling Gemini (Recommendations): gemini-2.5-flash")
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[prompt]
+        )
         return jsonify({"recommendations": response.text})
 
     except Exception as e:
@@ -382,7 +455,8 @@ Be concise and practical.
 def chat():
     try:
         data = request.json
-        api_key = data.get('api_key', '')
+        provided_key = data.get('api_key', '')
+        api_key = get_api_key(provided_key)
         student = data.get('student', {})
         message = data.get('message', '')
         progress_count = data.get('progress_count', 0)
@@ -391,8 +465,8 @@ def chat():
         if not GEMINI_AVAILABLE or not api_key:
             return jsonify({"error": "Gemini API not available or no API key"}), 400
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        print(f"DEBUG: /api/chat called. API Key length: {len(api_key)}")
+        client = genai.Client(api_key=api_key)
 
         prompt = f"""You are a special education teaching assistant.
 
@@ -404,7 +478,11 @@ TEACHER'S QUESTION: {message}
 
 Provide helpful, practical advice. Be concise."""
 
-        response = model.generate_content(prompt)
+        print(f"DEBUG: Calling Gemini (Chat): gemini-2.5-flash")
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[prompt]
+        )
         return jsonify({"response": response.text})
 
     except Exception as e:
@@ -448,7 +526,8 @@ def status():
     return jsonify({
         "ml_model": ml_model is not None,
         "gemini_available": GEMINI_AVAILABLE,
-        "tf_available": TF_AVAILABLE
+        "tf_available": TF_AVAILABLE,
+        "env_key_present": bool(os.environ.get('GEMINI_API_KEY'))
     })
 
 

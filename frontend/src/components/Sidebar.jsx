@@ -1,4 +1,27 @@
+import { useState, useEffect } from 'react'
+import { getStatus } from '../api'
+
 export default function Sidebar({ apiKey, onApiKeyChange, onClose }) {
+    const [systemStatus, setSystemStatus] = useState({
+        ml_model: false,
+        gemini_available: false,
+        tf_available: false
+    })
+
+    useEffect(() => {
+        const fetchStatus = async () => {
+            try {
+                const status = await getStatus()
+                setSystemStatus(status)
+            } catch (err) {
+                console.error("Failed to fetch backend status:", err)
+            }
+        }
+        fetchStatus()
+        const interval = setInterval(fetchStatus, 5000)
+        return () => clearInterval(interval)
+    }, [])
+
     return (
         <>
             <div className="sidebar-overlay" onClick={onClose} />
@@ -28,7 +51,7 @@ export default function Sidebar({ apiKey, onApiKeyChange, onClose }) {
                 {apiKey && (
                     <div className="status-item" style={{ marginTop: 8 }}>
                         <span className="status-dot active"></span>
-                        <span>API Key configured</span>
+                        <span>API Key configured (local)</span>
                     </div>
                 )}
 
@@ -36,18 +59,27 @@ export default function Sidebar({ apiKey, onApiKeyChange, onClose }) {
 
                 <h3>📊 System Status</h3>
                 <div className="status-item">
-                    <span className={`status-dot ${apiKey ? 'active' : 'inactive'}`}></span>
-                    <span>Gemini API</span>
+                    <span className={`status-dot ${systemStatus.gemini_available ? 'active' : 'inactive'}`}></span>
+                    <span>Gemini API {systemStatus.gemini_available ? '(Online)' : '(Offline)'}</span>
                 </div>
                 <div className="status-item">
-                    <span className="status-dot inactive"></span>
-                    <span>ML Model (requires backend)</span>
+                    <span className={`status-dot ${systemStatus.ml_model ? 'active' : 'inactive'}`}></span>
+                    <span>ML Model {systemStatus.ml_model ? '(Loaded)' : '(No Model)'}</span>
+                </div>
+                <div className="status-item">
+                    <span className={`status-dot ${systemStatus.tf_available ? 'active' : 'inactive'}`}></span>
+                    <span>TensorFlow {systemStatus.tf_available ? '(Available)' : '(Missing)'}</span>
                 </div>
 
                 <hr className="sidebar-divider" />
 
                 <p style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: 600, lineHeight: 1.6 }}>
-                    💡 <strong>Tip:</strong> Start the Flask backend server for ML model support.
+                    {!systemStatus.ml_model && (
+                        <>
+                            💡 <strong>Tip:</strong> Ensure <code>model.h5</code> is in the backend folder.
+                            <br />
+                        </>
+                    )}
                     Run <code style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: 6 }}>python backend/app.py</code>
                 </p>
             </div>
