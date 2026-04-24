@@ -159,10 +159,10 @@ def analyze_with_gemini_vision(image, student_data, api_key):
 TASK: Analyze this handwriting sample from a student.
 
 STUDENT CONTEXT:
-- Name: {student_data['name']}
-- Age: {student_data['age']} years
-- Disability Type: {student_data['disability']}
-- IQ Level: {student_data['iq']}
+- Name: {student_data.get('name', 'Unknown')}
+- Age: {student_data.get('age', 'Unknown')} years
+- Disability Type: {student_data.get('disability', 'Unknown')}
+- IQ Level: {student_data.get('iq', 'Unknown')}
 
 EXPECTED VOCABULARY (the word is likely one of these):
 {', '.join(CLASS_LABELS[:30])}... and similar simple words.
@@ -538,3 +538,4 @@ def status():
 if __name__ == '__main__':
     load_ml_model()
     app.run(debug=True, port=5000)
+    # Restart trigger
