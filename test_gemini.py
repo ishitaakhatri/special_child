@@ -4,10 +4,17 @@ from google import genai
 from google.genai import types
 from PIL import Image
 
+# Load .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 def test_gemini():
-    api_key = os.environ.get("GEMINI_API_KEY", "AIzaSyDjU2RkL7NG0RsSae18_U1KYsoPm0AviiQ")
+    api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        print("Error: GEMINI_API_KEY environment variable not set.")
+        print("Error: GEMINI_API_KEY environment variable not set. Add it to your .env file.")
         return
 
     try:

@@ -112,15 +112,26 @@ def load_ml_model():
     global ml_model
     if not TF_AVAILABLE:
         return None
-    model_paths = ['model.h5', 'model.keras', 'saved_model', 'models/model.h5',
-                   '../model.h5', '../model.keras', '../saved_model', '../models/model.h5']
+        
+    # Build robust absolute paths relative to app.py
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    model_paths = [
+        os.path.join(base_dir, '../model/model.h5'),
+        os.path.join(base_dir, '../model/model.keras'),
+        os.path.join(base_dir, '../model.h5'),
+        os.path.join(base_dir, 'model.h5'),
+        'model.h5',
+        '../model/model.h5'
+    ]
+    
     for path in model_paths:
         if os.path.exists(path):
             try:
                 ml_model = keras.models.load_model(path, compile=False)
                 print(f"ML Model loaded from {path}")
                 return ml_model
-            except Exception:
+            except Exception as e:
+                print(f"Failed to load {path}: {e}")
                 continue
     print("No ML model found.")
     return None
